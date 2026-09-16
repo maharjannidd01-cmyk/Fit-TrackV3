@@ -163,16 +163,20 @@ const S={
     targetCal:2300, targetProtein:200,
     goalDays:100, programName:'100-Day Transformation',
     startDate:new Date().toDateString(),
+    targetWeightKg:null, startWeightKg:null, weeklyWorkoutTarget:5, waterTarget:8,
     manualDay:null, audioEnabled:true,
     weeklySchedule:{},
+    wearable:{connected:false,name:'',deviceId:'',lastConnectedAt:null,battery:null,heartRate:null,steps:null},
   },
   session:null,
   cookMeal:{name:'',ingredients:[],servings:1,myServings:1},
 };
 
 const KEY='ft4', DRAFT='ft4_draft';
+let deferredInstallPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
 
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY)||'{}');if(d.exercises)S.exercises=d.exercises;if(d.plans)S.plans=d.plans;if(d.logs)S.logs=d.logs;if(d.profile)S.profile={...S.profile,...d.profile};}catch(e){}}
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY)||'{}');if(d.exercises)S.exercises=d.exercises;if(d.plans)S.plans=d.plans;if(d.logs)S.logs=d.logs;if(d.profile)S.profile={...S.profile,...d.profile,wearable:{...S.profile.wearable,...(d.profile.wearable||{})}};}catch(e){}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify({exercises:S.exercises,plans:S.plans,logs:S.logs,profile:S.profile}));}catch(e){}}
 function saveDraft(){if(!S.session){try{localStorage.removeItem(DRAFT);}catch(e){}return;}try{localStorage.setItem(DRAFT,JSON.stringify({...S.session,savedAt:Date.now()}));}catch(e){}}
 function loadDraft(){try{const d=JSON.parse(localStorage.getItem(DRAFT)||'null');if(!d||!d.startTs)return null;if(Date.now()-(d.savedAt||0)>6*3600*1000){localStorage.removeItem(DRAFT);return null;}return d;}catch(e){return null;}}
@@ -202,6 +206,39 @@ function fmt(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.fl
 function z(n){return String(n).padStart(2,'0');}
 function fmtDate(d){return new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'});}
 function fmtDateLong(d){return new Date(d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'long',year:'numeric'});}
+function localDateISO(d=new Date()){const x=new Date(d);return `${x.getFullYear()}-${z(x.getMonth()+1)}-${z(x.getDate())}`;}
+
+function goalProgress(){
+  const p=S.profile, current=latestBodyWeight();
+  const start=parseFloat(p.startWeightKg||p.weightKg)||0, target=parseFloat(p.targetWeightKg)||0;
+  let weightPct=null;
+  if(start&&target&&current!=null&&start!==target){
+    const raw=(current-start)/(target-start)*100;
+    weightPct=Math.max(0,Math.min(100,Math.round(raw)));
+  }
+  const days=Math.max(1,dayNum());
+  const sessions=Object.values(S.logs).reduce((n,l)=>n+(l.sessions||[]).length,0);
+  const weeks=Math.max(1,Math.ceil(days/7));
+  return {current,start,target,weightPct,sessions,weeks,weeklyTarget:parseInt(p.weeklyWorkoutTarget)||5};
+}
+function latestBodyWeight(){
+  const rows=Object.entries(S.logs).filter(([,l])=>l&&l.bodyWeight).sort(([a],[b])=>new Date(b)-new Date(a));
+  return rows.length?parseFloat(rows[0][1].bodyWeight):null;
+}
+function rangeStats(days){
+  const out={sessions:0,volume:0,proteinDays:0,loggedDays:0,waterDays:0};
+  const now=new Date();
+  for(let i=0;i<days;i++){
+    const d=new Date(now); d.setDate(d.getDate()-i); const k=d.toDateString(), l=S.logs[k];
+    if(!l)continue;
+    const sess=l.sessions||[]; out.sessions+=sess.length;
+    out.volume+=sess.reduce((v,se)=>v+Object.values(se.setLogs||{}).flat().reduce((vv,set)=>vv+(set.done&&set.weight&&set.reps?(parseFloat(set.weight)||0)*(parseInt(set.reps)||0):0),0),0);
+    const protein=proteinG(k); if(protein>0)out.proteinDays++;
+    if(sess.length||(l.foods||[]).length||l.bodyWeight||l.water)out.loggedDays++;
+    if((l.water||0)>=((S.profile.waterTarget||8)))out.waterDays++;
+  }
+  return out;
+}
 
 function streak(){let s=0;const now=new Date();for(let i=0;i<90;i++){const d=new Date(now);d.setDate(d.getDate()-i);const l=S.logs[d.toDateString()];if(l&&((l.sessions||[]).length>0||(l.foods||[]).length>0))s++;else if(i>0)break;}return s;}
 
@@ -302,7 +339,7 @@ function filterAddExWorkout(q){const el=$('aew-list');if(el)el.innerHTML=renderA
 function addExToSession(exId){
   if(!S.session)return;
   const ex=getEx(exId);if(!ex)return;
-  const idx=Object.keys(S.session.setLogs).length;
+  const idx=Object.keys(S.session.setLogs).reduce((m,k)=>Math.max(m,parseInt(k,10)||0),-1)+1;
   const cnt=ex.isCardio?1:ex.defaultSets;
   S.session.setLogs[idx]=Array.from({length:cnt},(_,si)=>({exName:ex.name,setNum:si+1,weight:'',reps:'',done:false}));
   // Store the exercise ref for rendering
@@ -354,6 +391,7 @@ function removeLastSet(exIdx){
 function removeExFromSession(exIdx){
   if(!S.session)return;
   delete S.session.setLogs[exIdx];
+  if(Array.isArray(S.session.extraExercises)) S.session.extraExercises=S.session.extraExercises.filter(e=>e.idx!==exIdx);
   saveDraft();closeModal();go('workout');toast('Exercise removed');
 }
 
@@ -372,7 +410,7 @@ function tickRest(){
   const oc=$('rov-count');if(oc)oc.textContent=fmt(Math.ceil(rem));
   const C1=2*Math.PI*24, ring1=$('rb-ring');
   if(ring1)ring1.style.strokeDashoffset=C1*(rem/S.session.rest.target);
-  const C2=2*Math.PI*90, ring2=$('rov-ring');
+  const C2=2*Math.PI*116, ring2=$('rov-ring');
   if(ring2)ring2.style.strokeDashoffset=C2*(rem/S.session.rest.target);
   if(rem<=0){
     clearInterval(S.session.rest.iv);
@@ -401,7 +439,7 @@ function completeSet(exIdx,setIdx){
   const badge=$(`eb-${exIdx}`);if(badge)badge.style.display=allDone?'':'none';
   const total=Object.values(S.session.setLogs).flat().length;
   const done=Object.values(S.session.setLogs).flat().filter(s=>s.done).length;
-  const pct=Math.round((done/total)*100);
+  const pct=total?Math.round((done/total)*100):0;
   const pb=$('sb-prog');if(pb)pb.style.width=pct+'%';
   const pl=$('sb-prog-lbl');if(pl)pl.textContent=`${done}/${total} sets · ${pct}%`;
   if(set.done)startRest(allDone?90:60);
@@ -479,6 +517,16 @@ function pgHome(){
     </div>
     ${(log.sessions||[]).length>0?`<div style="font-size:12px;color:var(--accent);margin-top:10px">✓ ${log.sessions.length} session(s) done today · ${brn} kcal burned</div>`:''}
   </div>
+  <div class="goal-strip card mx mb12">
+    <div class="goal-strip-head"><div><div class="goal-kicker">GOAL PROGRESS</div><div class="goal-title">${S.profile.targetWeightKg?`Target ${S.profile.targetWeightKg} kg`:'Set your target weight'}</div></div><button class="btn btn-o btn-sm" onclick="openSettings()">${S.profile.targetWeightKg?'Edit':'Set goal'}</button></div>
+    ${S.profile.targetWeightKg&&goalProgress().weightPct!==null?`<div class="goal-bar"><div style="width:${goalProgress().weightPct}%"></div></div><div class="goal-meta"><span>${goalProgress().current||'—'} kg current</span><span>${goalProgress().weightPct}% of target path</span></div>`:`<div class="goal-empty">Add a target weight and weekly workout target to make your dashboard personal.</div>`}
+  </div>
+  <div class="quick-grid mx">
+    <button class="quick-card" onclick="go('workout')"><span>💪</span><strong>${(log.sessions||[]).length?'Continue training':'Start training'}</strong><small>${(log.sessions||[]).length?log.sessions.length+' session today':'Your scheduled plan is ready'}</small></button>
+    <button class="quick-card" onclick="go('food')"><span>🍽️</span><strong>Log nutrition</strong><small>${cal} kcal · ${pro}g protein</small></button>
+    <button class="quick-card" onclick="$('bw-inp')?.focus()"><span>⚖️</span><strong>Log weight</strong><small>${log.bodyWeight?log.bodyWeight+' kg today':'No weight logged'}</small></button>
+    <button class="quick-card" onclick="logWater(Math.min((log.water||0)+1,S.profile.waterTarget||8))"><span>💧</span><strong>Add water</strong><small>${log.water||0}/${S.profile.waterTarget||8} glasses</small></button>
+  </div>
   <div class="sec">Today</div>
   <div class="macro-row">
     <div class="mc"><div class="v" style="color:var(--accent)">${cal}</div><div class="l">Eaten</div></div>
@@ -532,7 +580,7 @@ function pgWorkout(){
   const plan=getPlan(S.session.planId);
   const fl=Object.values(S.session.setLogs).flat();
   const done=fl.filter(s=>s.done).length,total=fl.length;
-  const pct=Math.round((done/total)*100);
+  const pct=total?Math.round((done/total)*100):0;
   const pb=$('sb-prog');if(pb)pb.style.width=pct+'%';
   const pl=$('sb-prog-lbl');if(pl)pl.textContent=`${done}/${total} sets · ${pct}%`;
 
@@ -617,7 +665,7 @@ function showSummary(sessData){
     <div class="sum-grid">
       <div class="sum-card">
         <div class="sum-card-val" style="color:var(--red)">${brn}</div>
-        <div class="sum-card-label">kcal Burned</div>
+        <div class="sum-card-label">kcal Burned · est.</div>
       </div>
       <div class="sum-card">
         <div class="sum-card-val" style="color:var(--orange)">${str} 🔥</div>
@@ -642,7 +690,7 @@ function showSummary(sessData){
     <div class="sum-hr-box">
       <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--red);text-transform:uppercase;margin-bottom:8px">Heart Rate</div>
       <div style="display:flex;gap:24px">
-        <div><div style="font-size:22px;font-weight:800;color:var(--sub)">—</div><div style="font-size:11px;color:var(--sub)">Avg bpm</div></div>
+        <div><div style="font-size:22px;font-weight:800;color:var(--sub)">${S.profile.wearable?.heartRate||'—'}</div><div style="font-size:11px;color:var(--sub)">Latest bpm</div></div>
         <div><div style="font-size:22px;font-weight:800;color:var(--sub)">—</div><div style="font-size:11px;color:var(--sub)">Max bpm</div></div>
       </div>
       <div style="font-size:11px;color:var(--sub);margin-top:8px">Connect a wearable for heart rate data</div>
@@ -745,7 +793,7 @@ function downloadSummaryPNG(){
   // Download
   const url=canvas.toDataURL('image/png');
   const a=document.createElement('a');a.href=url;
-  a.download=`fittrack_${d.planName.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.png`;
+  a.download=`fittrack_${d.planName.replace(/\s+/g,'_')}_${localDateISO()}.png`;
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   toast('Image saved!');
 }
@@ -991,6 +1039,7 @@ function logCookMeal(){
 //  DASHBOARD
 // ─────────────────────────────────────
 function pgDashboard(){
+  const w=S.profile.wearable||{};
   const totalSess=Object.values(S.logs).reduce((s,l)=>s+(l.sessions||[]).length,0);
   const totalBurn=Object.entries(S.logs).reduce((s,[d])=>s+burnedCal(d),0);
   const totalVol=calcTotalVolume();
@@ -999,10 +1048,15 @@ function pgDashboard(){
   const weeks=[];const now=new Date();
   for(let w=7;w>=0;w--){let vol=0,lbl='';for(let d=0;d<7;d++){const dt=new Date(now);dt.setDate(dt.getDate()-(w*7+d));const k=dt.toDateString();if(d===0)lbl=dt.toLocaleDateString('en-IN',{day:'numeric',month:'short'});const l=S.logs[k];if(l)(l.sessions||[]).forEach(sess=>{Object.values(sess.setLogs||{}).forEach(sets=>{sets.forEach(s=>{if(s.done&&s.weight&&s.reps)vol+=((parseFloat(s.weight)||0)*(parseInt(s.reps)||0));});});});}weeks.push({vol,lbl});}
   const maxVol=Math.max(...weeks.map(w=>w.vol),1);
+  const weightLogs=Object.entries(S.logs).filter(([,l])=>Number.isFinite(parseFloat(l.bodyWeight))).sort(([a],[b])=>new Date(a)-new Date(b));
+  const latestWeight=weightLogs.at(-1)?.[1]?.bodyWeight||null;
+  const firstWeight=weightLogs[0]?.[1]?.bodyWeight||null;
+  const weightDelta=(latestWeight!=null&&firstWeight!=null&&weightLogs.length>1)?Math.round((latestWeight-firstWeight)*10)/10:null;
   const cells=[];for(let w=11;w>=0;w--)for(let d=6;d>=0;d--){const dt=new Date(now);dt.setDate(dt.getDate()-(w*7+d));const k=dt.toDateString();const l=S.logs[k];cells.push({k,hasSess:l&&(l.sessions||[]).length>0,hasFood:l&&(l.foods||[]).length>0});}
   const bwData=Object.entries(S.logs).filter(([,l])=>l.bodyWeight).sort(([a],[b])=>new Date(a)-new Date(b)).slice(-20);
   return `
   <div class="pg-title">Dashboard</div><div class="pg-sub">Performance overview</div>
+  <div style="padding:0 16px 10px"><button class="btn btn-o btn-sm" onclick="go('history')">🗓 View History</button></div>
   <div class="dash-stats">
     <div class="ds"><div class="v">${totalSess}</div><div class="l">Sessions</div></div>
     <div class="ds"><div class="v">${streak()}</div><div class="l">Streak 🔥</div></div>
@@ -1010,7 +1064,16 @@ function pgDashboard(){
     <div class="ds"><div class="v">${(totalVol/1000).toFixed(1)}t</div><div class="l">Volume</div></div>
     <div class="ds"><div class="v">${totalBurn}</div><div class="l">kcal</div></div>
     <div class="ds"><div class="v">${dayNum()}</div><div class="l">Day / ${S.profile.goalDays}</div></div>
+    ${latestWeight!=null?`<div class="ds"><div class="v">${latestWeight}</div><div class="l">Weight kg${weightDelta!==null?` · ${weightDelta>0?'+':''}${weightDelta}`:''}</div></div>`:''}
   </div>
+  <div class="sec">Goal Progress</div>
+  <div class="goal-dashboard mx card">
+    <div><div class="goal-kicker">${S.profile.programName}</div><div class="goal-title">Day ${dayNum()} of ${S.profile.goalDays}</div></div>
+    <div class="goal-bar"><div style="width:${Math.min(100,Math.round(dayNum()/Math.max(1,S.profile.goalDays)*100))}%"></div></div>
+    <div class="goal-meta"><span>${S.profile.targetWeightKg?`Target ${S.profile.targetWeightKg} kg`:'Target weight not set'}</span><span>${Math.min(100,Math.round(dayNum()/Math.max(1,S.profile.goalDays)*100))}% timeline</span></div>
+  </div>
+  <div class="sec">7-Day Snapshot</div>
+  <div class="snapshot-grid mx">${(()=>{const r=rangeStats(7);return `<div class="snap"><b>${r.sessions}</b><span>Workouts</span></div><div class="snap"><b>${Math.round(r.volume/100)/10}t</b><span>Volume</span></div><div class="snap"><b>${r.proteinDays}/7</b><span>Protein days</span></div><div class="snap"><b>${r.waterDays}/7</b><span>Water goal</span></div>`})()}</div>
   <div class="sec">Weekly Volume</div>
   <div class="chart-box mx mb12">${svgBarChart(weeks.map(w=>w.vol),weeks.map(w=>w.lbl),maxVol)}</div>
   <div class="sec">Consistency</div>
@@ -1078,8 +1141,8 @@ function exportTab(){
       <button class="btn btn-o btn-sm" onclick="setExpRange(9999)">All Time</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div><label class="lbl">From</label><input type="date" id="exp-from" class="inp" value="${defFrom.toISOString().split('T')[0]}"></div>
-      <div><label class="lbl">To</label><input type="date" id="exp-to" class="inp" value="${now.toISOString().split('T')[0]}"></div>
+      <div><label class="lbl">From</label><input type="date" id="exp-from" class="inp" value="${localDateISO(defFrom)}"></div>
+      <div><label class="lbl">To</label><input type="date" id="exp-to" class="inp" value="${localDateISO(now)}"></div>
     </div>
   </div>
   <div id="exp-preview" style="padding:0 16px;margin-top:8px"></div>
@@ -1094,8 +1157,8 @@ function exportTab(){
 function setExpRange(days){
   const now=new Date();const from=new Date(now);from.setDate(from.getDate()-(days-1));
   const fi=$('exp-from');const ti=$('exp-to');
-  if(fi)fi.value=from.toISOString().split('T')[0];
-  if(ti)ti.value=now.toISOString().split('T')[0];
+  if(fi)fi.value=localDateISO(from);
+  if(ti)ti.value=localDateISO(now);
   showExpPreview();
 }
 
@@ -1120,9 +1183,10 @@ function showExpPreview(){
   </div>`;
 }
 
-function buildExpData(){return getExpLogs().map(([d,l])=>({date:d,plan:(l.sessions||[]).map(s=>s.planName||'').join(', '),duration_min:(l.sessions||[]).reduce((s,sess)=>s+Math.round((sess.duration||0)/60),0),calories_eaten:consumed(d),protein_g:Math.round(proteinG(d)),calories_burned:burnedCal(d),water_glasses:l.water||0,body_weight_kg:l.bodyWeight||'',sets:(l.sessions||[]).flatMap(sess=>Object.values(sess.setLogs||{}).flatMap(sets=>sets.filter(s=>s.done).map(s=>({ex:s.exName,kg:s.weight,reps:s.reps}))))  }));}
+function buildExpData(){return getExpLogs().map(([d,l])=>({date:d,plan:(l.sessions||[]).map(s=>s.planName||'').join(', '),duration_min:(l.sessions||[]).reduce((s,sess)=>s+Math.round((sess.duration||0)/60),0),calories_eaten:consumed(d),protein_g:Math.round(proteinG(d)),calories_burned:burnedCal(d),water_glasses:l.water||0,body_weight_kg:l.bodyWeight||'',volume_kg:(l.sessions||[]).reduce((v,sess)=>v+Object.values(sess.setLogs||{}).flat().reduce((vv,set)=>vv+(set.done&&set.weight&&set.reps?(parseFloat(set.weight)||0)*(parseInt(set.reps)||0):0),0),0),sets:(l.sessions||[]).flatMap(sess=>Object.values(sess.setLogs||{}).flatMap(sets=>sets.filter(s=>s.done).map(s=>({ex:s.exName,kg:s.weight,reps:s.reps}))))  }));}
 function dlFile(c,n,t){const b=new Blob([c],{type:t});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
-function doCSV(){const d=buildExpData();if(!d.length){toast('No data in selected range',true);return;}const h=['Date','Plan','Duration(min)','Cal Eaten','Protein(g)','Cal Burned','Water','Weight(kg)'];dlFile([h.join(','),...d.map(r=>[r.date,`"${r.plan}"`,r.duration_min,r.calories_eaten,r.protein_g,r.calories_burned,r.water_glasses,r.body_weight_kg].join(','))].join('\n'),'fittrack_export.csv','text/csv');toast('CSV downloaded!');}
+function csvCell(v){const x=String(v??'');return /[",\n]/.test(x)?`"${x.replace(/"/g,'""')}"`:x;}
+function doCSV(){const d=buildExpData();if(!d.length){toast('No data in selected range',true);return;}const h=['Date','Plan','Duration(min)','Cal Eaten','Protein(g)','Cal Burned','Water','Weight(kg)','Volume(kg)'];dlFile([h.join(','),...d.map(r=>[r.date,r.plan,r.duration_min,r.calories_eaten,r.protein_g,r.calories_burned,r.water_glasses,r.body_weight_kg,r.volume_kg].map(csvCell).join(','))].join('\n'),'fittrack_export.csv','text/csv');toast('CSV downloaded!');}
 function doJSON(){const d=buildExpData();if(!d.length){toast('No data in selected range',true);return;}dlFile(JSON.stringify(d,null,2),'fittrack_export.json','application/json');toast('JSON downloaded!');}
 function doShare(){const d=buildExpData();if(!d.length){toast('No data',true);return;}const t=d.slice(-7).map(r=>`📅 ${r.date}\n💪 ${r.plan||'Rest'} · ${r.duration_min}min\n🍽️ ${r.calories_eaten} kcal · 🔥 ${r.calories_burned} burned\n`).join('\n');if(navigator.share)navigator.share({title:'FitTrack Export',text:t});else{navigator.clipboard?.writeText(t);toast('Copied!');}}
 
@@ -1278,6 +1342,98 @@ function seEdit(d,si,exIdx,setIdx,field,val){const sets=dayLog(d).sessions[si]?.
 function seToggle(d,si,exIdx,setIdx){const sets=dayLog(d).sessions[si]?.setLogs?.[exIdx];if(sets&&sets[setIdx]){sets[setIdx].done=!sets[setIdx].done;save();openSessionEdit(d,si);}}
 function seAddSet(d,si,exIdx,exName){const sess=dayLog(d).sessions[si];if(!sess?.setLogs)return;if(!sess.setLogs[exIdx])sess.setLogs[exIdx]=[];sess.setLogs[exIdx].push({exName,setNum:sess.setLogs[exIdx].length+1,weight:'',reps:'',done:false});save();openSessionEdit(d,si);}
 
+
+// ── DATA BACKUP / RESTORE ─────────────────
+function installApp(){
+  if(!deferredInstallPrompt){toast('Use your browser menu to install FitTrack Pro');return;}
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.finally(()=>{deferredInstallPrompt=null;});
+}
+function exportBackup(){
+  const payload={version:5,exportedAt:new Date().toISOString(),app:'FitTrack Pro',
+    exercises:S.exercises,plans:S.plans,logs:S.logs,profile:S.profile};
+  dlFile(JSON.stringify(payload,null,2),'fittrack-backup.json','application/json');
+  toast('Backup downloaded ✓');
+}
+function importBackup(){
+  const input=document.createElement('input'); input.type='file'; input.accept='.json,application/json';
+  input.onchange=()=>{
+    const file=input.files?.[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const d=JSON.parse(reader.result);
+        if(!d || !Array.isArray(d.exercises) || !Array.isArray(d.plans) || typeof d.logs!=='object' || !d.profile)
+          throw new Error('Invalid FitTrack backup');
+        if(!confirm('Restore this backup? Current FitTrack data will be replaced.'))return;
+        S.exercises=d.exercises; S.plans=d.plans; S.logs=d.logs; S.profile={...S.profile,...d.profile};
+        S.session=null; save(); saveDraft(); closeModal(); go('home'); syncBars(); toast('Backup restored ✓');
+      }catch(e){toast('Invalid backup file',true);}
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+function resetAllData(){
+  if(!confirm('Delete all workouts, food logs, plans, exercises and profile data? This cannot be undone.'))return;
+  localStorage.removeItem(KEY);localStorage.removeItem(DRAFT);
+  location.reload();
+}
+function estimate1RM(weight,reps){
+  const w=parseFloat(weight)||0,r=parseInt(reps)||0;
+  if(!w||!r)return 0;
+  return Math.round(w*(1+r/30));
+}
+
+
+// ── PHASE 4: WEARABLE / WEB BLUETOOTH ─────────────────────────
+const BLE_UUID={deviceInfo:'180A',battery:'180F',heartRate:'180D',batteryLevel:'2A19',heartRateMeasurement:'2A37',manufacturer:'2A29',model:'2A24'};
+let wearableDevice=null, wearableHRChar=null;
+function wearableAvailable(){return !!(navigator.bluetooth && navigator.bluetooth.requestDevice);}
+function setWearableState(patch){S.profile.wearable={...(S.profile.wearable||{}),...patch};save();renderWearableStatus();}
+function renderWearableStatus(){
+  const w=S.profile.wearable||{};
+  const st=$('wear-settings-status'),sub=$('wear-settings-sub'),hr=$('wear-hr'),bat=$('wear-battery'),steps=$('wear-steps');
+  if(st){st.textContent=w.connected?'Connected':'Not connected';st.classList.toggle('on',!!w.connected);}
+  if(sub)sub.textContent=w.name?(w.name+' · '+(w.connected?'live BLE link':'last known device')):'Noise / Bluetooth health data';
+  if(hr)hr.textContent=w.heartRate?String(w.heartRate):'—';
+  if(bat)bat.textContent=w.battery!=null?String(w.battery)+'%':'—';
+  if(steps)steps.textContent=w.steps!=null?Number(w.steps).toLocaleString():'—';
+}
+async function connectNoiseWearable(){
+  if(!wearableAvailable()){toast('Web Bluetooth is not supported in this browser. Try Chrome on Android/desktop.',true);return;}
+  try{
+    const device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[BLE_UUID.deviceInfo,BLE_UUID.battery,BLE_UUID.heartRate]});
+    wearableDevice=device;
+    device.addEventListener('gattserverdisconnected',()=>{setWearableState({connected:false});toast('Wearable disconnected');});
+    const server=await device.gatt.connect();
+    setWearableState({connected:true,name:device.name||'Bluetooth wearable',deviceId:device.id||'',lastConnectedAt:Date.now()});
+    await readWearableBattery(server);
+    await readWearableDeviceInfo(server);
+    await subscribeWearableHR(server);
+    toast((device.name||'Wearable')+' connected ✓');
+  }catch(e){
+    if(e&&e.name==='NotFoundError')return;
+    console.warn('Wearable connection failed',e);
+    setWearableState({connected:false});
+    toast('Could not connect. Keep the watch nearby and try again.',true);
+  }
+}
+async function readWearableBattery(server){
+  try{const svc=await server.getPrimaryService(BLE_UUID.battery);const ch=await svc.getCharacteristic(BLE_UUID.batteryLevel);const v=await ch.readValue();setWearableState({battery:v.getUint8(0)});}catch(e){}}
+async function readWearableDeviceInfo(server){
+  try{const svc=await server.getPrimaryService(BLE_UUID.deviceInfo);for(const [key,uuid] of [['manufacturer',BLE_UUID.manufacturer],['model',BLE_UUID.model]]){try{const ch=await svc.getCharacteristic(uuid);const v=await ch.readValue();const text=new TextDecoder().decode(v.buffer);if(text){setWearableState({name:(S.profile.wearable.name||'Noise wearable')+' · '+text});}}catch(e){}}}catch(e){}}
+async function subscribeWearableHR(server){
+  try{const svc=await server.getPrimaryService(BLE_UUID.heartRate);const ch=await svc.getCharacteristic(BLE_UUID.heartRateMeasurement);wearableHRChar=ch;await ch.startNotifications();ch.addEventListener('characteristicvaluechanged',onWearableHR);}
+  catch(e){console.info('No standard BLE heart-rate service exposed by this device.');}
+}
+function onWearableHR(ev){try{const v=ev.target.value;const flags=v.getUint8(0);const sixteen=flags&1;const hr=sixteen?v.getUint16(1,true):v.getUint8(1);if(hr>0&&hr<240)setWearableState({heartRate:hr});}catch(e){}}
+async function disconnectNoiseWearable(){
+  try{if(wearableHRChar){try{await wearableHRChar.stopNotifications();}catch(e){}wearableHRChar=null;}if(wearableDevice?.gatt?.connected)wearableDevice.gatt.disconnect();}catch(e){}
+  setWearableState({connected:false});toast('Wearable disconnected');
+}
+function renderWearablePreviewData(){renderWearableStatus();}
+
 function openSettings(){showModal(`
   <div class="modal-head"><div class="modal-title">⚙️ Settings</div><button class="modal-close" onclick="closeModal()">×</button></div>
   <div style="padding:16px;display:grid;gap:12px">
@@ -1287,7 +1443,11 @@ function openSettings(){showModal(`
     <div><label class="lbl">Daily Protein Target (g)</label><input id="s-pro" type="number" class="inp" value="${S.profile.targetProtein}"></div>
     <div><label class="lbl">Program Name</label><input id="s-prog" class="inp" value="${S.profile.programName}"></div>
     <div><label class="lbl">Goal Days</label><input id="s-goal" type="number" class="inp" value="${S.profile.goalDays}" min="1" max="365"></div>
-    <div><label class="lbl">Program Start Date</label><input id="s-start" type="date" class="inp" value="${new Date(S.profile.startDate).toISOString().split('T')[0]}"></div>
+    <div><label class="lbl">Target Weight (kg)</label><input id="s-target-w" type="number" class="inp" step="0.1" placeholder="e.g. 80" value="${S.profile.targetWeightKg||''}"></div>
+    <div><label class="lbl">Starting Weight (kg)</label><input id="s-start-w" type="number" class="inp" step="0.1" placeholder="Optional" value="${S.profile.startWeightKg||''}"></div>
+    <div><label class="lbl">Weekly Workout Target</label><input id="s-weekly" type="number" class="inp" min="1" max="14" value="${S.profile.weeklyWorkoutTarget||5}"></div>
+    <div><label class="lbl">Daily Water Target (glasses)</label><input id="s-water" type="number" class="inp" min="1" max="30" value="${S.profile.waterTarget||8}"></div>
+    <div><label class="lbl">Program Start Date</label><input id="s-start" type="date" class="inp" value="${localDateISO(S.profile.startDate)}"></div>
     <div style="background:var(--card2);border:1px solid var(--line);border-radius:var(--r);padding:14px">
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">🗓 Manual Day Override</div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:8px">Force a specific day number. Leave blank for auto.</div>
@@ -1295,14 +1455,21 @@ function openSettings(){showModal(`
     </div>
     <div style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="s-audio" ${S.profile.audioEnabled?'checked':''} style="width:18px;height:18px"><label for="s-audio" style="font-size:14px">Rest timer audio beep</label></div>
     <button class="btn btn-a" onclick="saveSettings()">Save Settings</button>
+    <button class="btn btn-o" onclick="installApp()">📲 Install FitTrack Pro</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn btn-o" onclick="exportBackup()">⬇ Backup Data</button>
+      <button class="btn btn-o" onclick="importBackup()">⬆ Restore Data</button>
+    </div>
     <button class="btn btn-r" onclick="clearAll()">🗑 Clear All Data</button>
-  </div>`);}
+  </div>`);renderWearableStatus();}
 
-function saveSettings(){S.profile.name=$('s-name')?.value.trim()||'Athlete';S.profile.weightKg=parseFloat($('s-bw')?.value)||100;S.profile.targetCal=parseInt($('s-cal')?.value)||2300;S.profile.targetProtein=parseInt($('s-pro')?.value)||200;S.profile.programName=$('s-prog')?.value.trim()||'My Program';S.profile.goalDays=parseInt($('s-goal')?.value)||100;const sd=$('s-start')?.value;if(sd)S.profile.startDate=new Date(sd).toDateString();const md=parseInt($('s-mday')?.value);S.profile.manualDay=(md>=1&&md<=S.profile.goalDays)?md:null;S.profile.audioEnabled=$('s-audio')?.checked??true;save();closeModal();go('home');toast('Settings saved ✓');}
-function clearAll(){if(!confirm('Delete ALL data?'))return;S.logs={};save();closeModal();go('home');toast('All data cleared');}
+function saveSettings(){S.profile.name=$('s-name')?.value.trim()||'Athlete';S.profile.weightKg=parseFloat($('s-bw')?.value)||100;S.profile.targetCal=parseInt($('s-cal')?.value)||2300;S.profile.targetProtein=parseInt($('s-pro')?.value)||200;S.profile.programName=$('s-prog')?.value.trim()||'My Program';S.profile.goalDays=parseInt($('s-goal')?.value)||100;S.profile.targetWeightKg=parseFloat($('s-target-w')?.value)||null;S.profile.startWeightKg=parseFloat($('s-start-w')?.value)||null;S.profile.weeklyWorkoutTarget=Math.max(1,parseInt($('s-weekly')?.value)||5);S.profile.waterTarget=Math.max(1,parseInt($('s-water')?.value)||8);const sd=$('s-start')?.value;if(sd)S.profile.startDate=new Date(sd).toDateString();const md=parseInt($('s-mday')?.value);S.profile.manualDay=(md>=1&&md<=S.profile.goalDays)?md:null;S.profile.audioEnabled=$('s-audio')?.checked??true;save();closeModal();go('home');toast('Settings saved ✓');}
+function clearAll(){resetAllData();}
 
 // ── SETTINGS GEAR ─────────────────────
-function addSettingsBtn(){const btn=document.createElement('button');btn.textContent='⚙️';btn.onclick=openSettings;btn.style.cssText='position:fixed;top:10px;right:10px;z-index:400;background:var(--card);border:1px solid var(--line);width:36px;height:36px;border-radius:50%;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;';document.body.appendChild(btn);}
+function addSettingsBtn(){
+  const btn=$('settings-btn'); if(btn)btn.onclick=openSettings;
+}
 
 // ── INIT ──────────────────────────────
 window.addEventListener('load',()=>{

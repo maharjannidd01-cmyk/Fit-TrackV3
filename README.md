@@ -1,16 +1,35 @@
-# FitTrack Pro — UI/UX Redesign
+# FitTrack Pro v5 — Audited UI/UX Redesign
 
-Files:
-- index.html — redesigned mobile-first visual system, app header, bottom navigation, cards, inputs, workout tables, sheets and summary screens.
-- app.js — original FitTrack Pro v4.1 logic preserved.
-- sw.js — original service-worker logic preserved.
+This package is an audited and improved version of the uploaded FitTrack Pro PWA.
 
-Design direction:
-- Dark athletic / premium training aesthetic
-- Lime performance accent with restrained secondary colors
-- Clearer information hierarchy and larger touch targets
-- Five-item bottom navigation: Home, Train, Log, Stats, Plans
-- History remains accessible from Stats/History workflows already present in app.js
-- Existing localStorage data model and workout/food/export functionality are intentionally preserved
+## Included
+- `index.html` — mobile-first premium athletic UI.
+- `app.js` — workout, nutrition, hydration, plans, history, dashboard, exports and settings logic, with audited fixes.
+- `sw.js` — updated offline service worker/cache.
+- `manifest.json` — PWA install manifest.
+- `icon.svg`, `icon-192.png`, `icon-512.png` — application icons.
+- `REDESIGN_PROMPT.md` — prompt used to drive the analysis/redesign/audit.
+- `AUDIT_REPORT.md` — implementation and QA audit.
 
-Open index.html through the same static/PWA hosting setup as the original project.
+## Major fixes
+- Added missing PWA manifest and icons.
+- Fixed service-worker asset caching.
+- Fixed timezone-safe local date handling.
+- Fixed live-workout exercise index collisions after exercise removal.
+- Added backup/restore for full app data.
+- Made full data reset actually clear all application data.
+- Hardened CSV export escaping.
+- Added volume to exported data.
+- Added dashboard history access.
+- Moved settings into the app header.
+- Removed the viewport restriction that prevented user zoom.
+- Clearly labels workout calorie burn as estimated.
+
+## Existing functionality preserved
+Workout plans, weekly scheduling, live workout sessions, set tracking, rest timer, exercise management, nutrition logging, meal builder, hydration, body weight, dashboard, history, PRs, workout summaries, exports and v3 migration remain part of the application.
+
+## Important limitation
+This remains a local-first static PWA. There is no real wearable/Health Connect/Apple Health, cloud sync, authentication, push notification or Bluetooth gym-equipment integration in this package. Heart-rate fields shown in the workout summary remain placeholders and are not presented as measured data.
+
+## Deployment
+Serve the directory over HTTPS (or localhost for development). Open `index.html` through the hosted origin rather than relying on `file://` if you want service-worker/PWA installation behavior.
