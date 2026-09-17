@@ -782,7 +782,7 @@ button{min-height:40px;}
 @media(max-width:390px){.rpe-row{gap:3px}.rpe-btn{height:36px;font-size:12px}.rb-ring{width:78px;height:78px}.rb-ring svg{width:78px;height:78px}.rb-count{font-size:21px}}
 
 /* ================================================================
-   FitTrack Pro v10 — Structural Shell & Spacing Reset
+   FitTrack Pro v10 — Structural Shell & Spacing Reset (retained legacy layer)
    Purpose: prevent fixed header/session chrome from covering scroll content,
    and make card/section rhythm predictable across the entire PWA.
    ================================================================ */
@@ -856,4 +856,120 @@ body.session-active #app-header{display:none;}
   .pg-sub,.sec{padding-left:var(--page-pad);padding-right:var(--page-pad);}
   .hero{margin-left:var(--page-pad)!important;margin-right:var(--page-pad)!important;}
   .scorecard-wrap,.dashboard-block{margin-left:var(--page-pad)!important;margin-right:var(--page-pad)!important;}
+}
+
+/* ================================================================
+   FitTrack Pro v11 — Phase 7: Shell / Wearable UX Stabilization
+   This layer intentionally supersedes legacy layout rules above.
+   ================================================================ */
+:root{
+  --header:64px;
+  --nav:74px;
+  --session-height:60px;
+  --rest-height:84px;
+  --page-pad:16px;
+  --content-max:780px;
+  --surface-gap:18px;
+  --section-gap:14px;
+  --chrome-gap:10px;
+}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;}
+#app{
+  position:fixed;inset:0;
+  display:grid!important;
+  grid-template-rows:auto minmax(0,1fr);
+  padding:0!important;
+  isolation:isolate;
+}
+#app-header{
+  position:relative!important;
+  top:auto!important;left:auto!important;right:auto!important;
+  grid-row:1;
+  height:var(--header)!important;
+  z-index:20!important;
+  display:flex;
+  flex-shrink:0;
+}
+#scroll{
+  position:relative!important;
+  top:auto!important;right:auto!important;bottom:auto!important;left:auto!important;
+  grid-row:2;
+  width:100%!important;max-width:none!important;margin:0!important;
+  height:auto!important;min-height:0;
+  padding:0 0 calc(var(--nav) + var(--safe) + 22px)!important;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+  transition:padding-top .16s ease;
+  z-index:1;
+}
+#scroll .page{width:100%;max-width:var(--content-max);min-height:100%;margin:0 auto;padding:0 0 18px;}
+#nav{z-index:300!important;}
+body.session-active #app-header{display:none!important;}
+body.session-active #scroll{padding-top:var(--session-height)!important;}
+body.rest-active #scroll{padding-top:calc(var(--session-height) + var(--rest-height))!important;}
+#session-bar{z-index:340!important;}
+#rest-bar{z-index:330!important;}
+
+/* Predictable vertical rhythm: section title belongs to the content below it. */
+.page > .sec{margin:var(--surface-gap) var(--page-pad) 8px;padding:0!important;}
+.page > .pg-title{padding:20px var(--page-pad) 4px!important;}
+.page > .pg-sub{padding:0 var(--page-pad) 12px!important;}
+.page > .card.mx,.page > .goal-strip.card,.page > .quick-grid{margin-left:var(--page-pad);margin-right:var(--page-pad);}
+.page > .card.mx + .sec{margin-top:var(--surface-gap);}
+
+/* Home: never allow the score/hero area to visually merge with the next block. */
+.hero{margin:18px var(--page-pad) 0!important;}
+.hero + .goal-strip.card{margin-top:var(--surface-gap)!important;margin-bottom:0!important;}
+.goal-strip.card + .quick-grid{margin-top:var(--surface-gap)!important;margin-bottom:0!important;}
+.quick-grid + .wear-home-wrap{margin-top:var(--surface-gap);}
+.wear-home-wrap{margin-left:var(--page-pad);margin-right:var(--page-pad);}
+
+/* Dashboard: score card is a distinct block with an explicit break before Overview. */
+.scorecard-wrap{margin:0 var(--page-pad) var(--surface-gap)!important;padding:0!important;}
+.scorecard{margin:0!important;}
+.dashboard-stack{display:grid;gap:var(--surface-gap)!important;}
+.dashboard-block{margin:0 var(--page-pad)!important;}
+.dashboard-block .sec{margin:0 0 8px!important;padding:0!important;}
+.dashboard-block .card,.dashboard-block .chart-box,.dashboard-block .goal-dashboard{margin-left:0!important;margin-right:0!important;}
+
+/* Wearable surfaces */
+.wear-card{padding:15px 16px!important;}
+.wear-home-card{box-shadow:0 12px 30px rgba(0,0,0,.14);}
+.wear-kicker{font-size:9px;font-weight:900;letter-spacing:1.45px;color:var(--accent);text-transform:uppercase;}
+.wear-action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
+.wear-browser{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 10px;margin-top:12px;background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:10px;font-size:11px;color:var(--sub);}
+.wear-browser b{font-size:11px;color:var(--text);text-align:right;}
+.wear-hub{display:grid;gap:10px;padding:14px 16px calc(var(--safe) + 18px);}
+.wear-current{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:13px 14px;background:linear-gradient(145deg,var(--card),#121812);border:1px solid var(--line);border-radius:14px;}
+.wear-current strong,.wear-current span{display:block;}
+.wear-current strong{font-size:14px;line-height:1.3;}
+.wear-current span{font-size:11px;color:var(--sub);margin-top:3px;}
+.wear-method{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 12px;background:var(--card2);border:1px solid var(--line);border-radius:13px;}
+.wear-method.active{border-color:var(--abrd);background:linear-gradient(145deg,rgba(201,255,62,.07),rgba(255,255,255,.02));}
+.wm-icon{width:38px;height:38px;border-radius:11px;background:var(--adim);border:1px solid var(--abrd);display:grid;place-items:center;color:var(--accent);font-size:14px;font-weight:950;}
+.wm-main{min-width:0;}
+.wm-main strong,.wm-main span,.wm-main small{display:block;}
+.wm-main strong{font-size:13px;}
+.wm-main span{font-size:11px;color:var(--sub);margin-top:2px;}
+.wm-main small{font-size:10px;color:var(--sub);line-height:1.45;margin-top:5px;}
+.wear-capabilities{padding:11px 12px;background:rgba(62,207,255,.05);border:1px solid rgba(62,207,255,.16);border-radius:11px;color:var(--sub);font-size:10px;line-height:1.5;}
+.info-modal{padding:14px 16px calc(var(--safe) + 18px);display:grid;gap:12px;color:var(--sub);font-size:12px;line-height:1.6;}
+.info-modal ol{margin:0 0 0 18px;padding:0;display:grid;gap:7px;}
+.info-callout{padding:11px 12px;background:var(--adim);border:1px solid var(--abrd);border-radius:11px;color:var(--text);font-size:11px;line-height:1.5;}
+.modal-subtitle{font-size:10px;color:var(--sub);margin-top:2px;}
+
+/* Safer touch targets without changing text hierarchy. */
+.wear-card .btn,.wear-method .btn{min-height:42px;}
+.wear-method .btn{align-self:center;white-space:nowrap;}
+
+@media(max-width:560px){
+  :root{--page-pad:14px;--surface-gap:17px;--section-gap:13px;}
+  .wear-method{grid-template-columns:34px minmax(0,1fr);}
+  .wear-method .btn{grid-column:2;justify-self:stretch;width:100%;}
+  .wear-action-row{grid-template-columns:1fr;}
+}
+@media(max-width:390px){
+  .wear-metrics{grid-template-columns:1fr 1fr;}
+  .wear-metric:last-child{grid-column:1/-1;}
 }

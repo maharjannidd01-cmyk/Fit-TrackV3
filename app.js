@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════
-   FitTrack Pro v10  —  app.js
+   FitTrack Pro v11  —  app.js
    + Add/edit exercises mid-workout
    + Larger rest timer
    + Food quantity editing
@@ -166,14 +166,14 @@ const S={
     targetWeightKg:null, startWeightKg:null, weeklyWorkoutTarget:5, waterTarget:8,
     manualDay:null, audioEnabled:true,
     weeklySchedule:{},
-    wearable:{connected:false,name:'',deviceId:'',lastConnectedAt:null,battery:null,heartRate:null,steps:null},
+    wearable:{connected:false,name:'',deviceId:'',lastConnectedAt:null,lastSyncAt:null,method:'none',source:'',battery:null,heartRate:null,steps:null,avgHeartRate:null,capabilities:[]},
   },
   session:null,
   cookMeal:{name:'',ingredients:[],servings:1,myServings:1},
 };
 
-const KEY='fittrack_pro_v10', LEGACY_V9='fittrack_pro_v9', LEGACY_KEY='ft4', DRAFT='fittrack_pro_session_v10', LEGACY_DRAFT='fittrack_pro_session_v9';
-const SCHEMA_VERSION=10;
+const KEY='fittrack_pro_v11', LEGACY_V10='fittrack_pro_v10', LEGACY_V9='fittrack_pro_v9', LEGACY_KEY='ft4', DRAFT='fittrack_pro_session_v11', LEGACY_DRAFT='fittrack_pro_session_v10';
+const SCHEMA_VERSION=11;
 let _draftSaveTs=0, _midnightKey='';
 let deferredInstallPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
@@ -189,12 +189,12 @@ function normalizeState(d){
 }
 function load(){
   try{
-    const rawKey=[KEY,LEGACY_V9,LEGACY_KEY].find(k=>localStorage.getItem(k));
+    const rawKey=[KEY,LEGACY_V10,LEGACY_V9,LEGACY_KEY].find(k=>localStorage.getItem(k));
     const raw=rawKey?localStorage.getItem(rawKey):null;
     const d=raw?JSON.parse(raw):{};
     const n=normalizeState(d);
     S.exercises=n.exercises;S.plans=n.plans;S.logs=n.logs;S.profile=n.profile;
-    if(raw && !localStorage.getItem(KEY) && rawKey!==KEY){save();}
+    if(raw && rawKey!==KEY){save();}
   }catch(e){toast('Stored data could not be read — starting safely.');}
 }
 function save(){
@@ -209,7 +209,7 @@ function saveDraft(force=false){
   _draftSaveTs=now;
   try{localStorage.setItem(DRAFT,JSON.stringify({...S.session,schemaVersion:SCHEMA_VERSION,savedAt:now}));}catch(e){}
 }
-function loadDraft(){try{const raw=localStorage.getItem(DRAFT)||localStorage.getItem(LEGACY_DRAFT);const d=JSON.parse(raw||'null');if(!d||!d.startTs)return null;if(Date.now()-(d.savedAt||0)>12*3600*1000){localStorage.removeItem(DRAFT);return null;}return d;}catch(e){return null;}}
+function loadDraft(){try{const raw=localStorage.getItem(DRAFT)||localStorage.getItem(LEGACY_DRAFT)||localStorage.getItem('fittrack_pro_session_v9');const d=JSON.parse(raw||'null');if(!d||!d.startTs)return null;if(Date.now()-(d.savedAt||0)>12*3600*1000){localStorage.removeItem(DRAFT);return null;}return d;}catch(e){return null;}}
 function migrateV3(){try{const v3=JSON.parse(localStorage.getItem('ft3')||'null');if(!v3)return;if(v3.logs)Object.entries(v3.logs).forEach(([d,l])=>{if(!S.logs[d])S.logs[d]={foods:[],water:0,bodyWeight:null,sessions:[]};if(l.calories)S.logs[d].foods=l.calories.map(f=>({name:f.name,cal:f.cal,p:f.p||0,c:f.c||0,f:f.f||0,qty:1}));if(l.water)S.logs[d].water=l.water;if(l.weight)S.logs[d].bodyWeight=l.weight;if(l.sessions)S.logs[d].sessions=l.sessions;});if(v3.profile){S.profile.name=v3.profile.name||S.profile.name;S.profile.weightKg=v3.profile.weightKg||S.profile.weightKg;S.profile.targetCal=v3.profile.targetCal||v3.profile.targetCals||S.profile.targetCal;S.profile.targetProtein=v3.profile.targetProtein||S.profile.targetProtein;}localStorage.removeItem('ft3');save();toast('Previous data imported ✓');}catch(e){}}
 function initSeed(){if(S.exercises.length)return;S.exercises=SEED_EXERCISES.map((e,i)=>({id:'ex_'+String(i+1).padStart(3,'0'),name:e.name,muscleGroup:e.mg,defaultSets:e.ds,defaultReps:e.dr,note:e.note||'',isCardio:!!e.isCardio}));S.plans=SEED_PLANS.map((p,i)=>({id:'pl_'+String(i+1).padStart(3,'0'),name:p.name,emoji:p.emoji,exercises:p.exNames.map(name=>{const ex=S.exercises.find(e=>e.name===name);return ex?{exId:ex.id,sets:ex.defaultSets,reps:ex.defaultReps,note:ex.note}:null;}).filter(Boolean)}));const ids=S.plans.map(p=>p.id);S.profile.weeklySchedule={mon:ids[0],tue:ids[1],wed:ids[2],thu:ids[3],fri:ids[4],sat:ids[5],sun:null};save();}
 
@@ -506,6 +506,7 @@ function syncBars(){
   const sessOn=!!S.session,restOn=!!(S.session?.rest?.on);
   sb.classList.toggle('on',sessOn);rb.classList.toggle('on',restOn);
   document.body.classList.toggle('session-active',sessOn);
+  document.body.classList.toggle('rest-active',restOn);
   const headerH=$('app-header')?.getBoundingClientRect().height||64;
   const sessionH=sessOn?(sb.getBoundingClientRect().height||60):0;
   const restH=restOn?(rb.getBoundingClientRect().height||82):0;
@@ -592,6 +593,9 @@ function pgHome(){
     <button class="quick-card" onclick="go('food')"><span>🍽️</span><strong>Log nutrition</strong><small>${cal} kcal · ${pro}g protein</small></button>
     <button class="quick-card" onclick="$('bw-inp')?.focus()"><span>⚖️</span><strong>Log weight</strong><small>${log.bodyWeight?log.bodyWeight+' kg today':'No weight logged'}</small></button>
     <button class="quick-card" onclick="logWater(Math.min((log.water||0)+1,S.profile.waterTarget||8))"><span>💧</span><strong>Add water</strong><small>${log.water||0}/${S.profile.waterTarget||8} glasses</small></button>
+  </div>
+  <div class="wear-home-wrap">
+    ${wearableHomeCard()}
   </div>
   <div class="sec">Today</div>
   <div class="macro-row">
@@ -1153,6 +1157,10 @@ function pgDashboard(){
   </div>
   <div class="dashboard-stack">
     <section class="dashboard-block">
+      <div class="sec">Wearable & Health</div>
+      ${wearableDashboardCard()}
+    </section>
+    <section class="dashboard-block">
       <div class="sec">Overview</div>
       <div class="metric-grid-3">
         <div class="metric-tile"><b>${totalSess}</b><span>Sessions</span></div>
@@ -1493,52 +1501,120 @@ function estimate1RM(weight,reps){
 }
 
 
-// ── PHASE 4: WEARABLE / WEB BLUETOOTH ─────────────────────────
+// ── PHASE 7: WEARABLE HUB / CONNECTION LAYER ─────────────────
 const BLE_UUID={deviceInfo:'180A',battery:'180F',heartRate:'180D',batteryLevel:'2A19',heartRateMeasurement:'2A37',manufacturer:'2A29',model:'2A24'};
 let wearableDevice=null, wearableHRChar=null;
-function wearableAvailable(){return !!(navigator.bluetooth && navigator.bluetooth.requestDevice);}
-function setWearableState(patch){S.profile.wearable={...(S.profile.wearable||{}),...patch};save();renderWearableStatus();}
+function wearableAvailable(){return !!(navigator.bluetooth&&navigator.bluetooth.requestDevice)}
+function wearableSecureContext(){return window.isSecureContext===true||location.hostname==='localhost'||location.hostname==='127.0.0.1'}
+function wearableBrowserLabel(){if(!wearableAvailable())return 'Bluetooth API unavailable';if(!wearableSecureContext())return 'HTTPS required';return 'Ready to connect'}
+function setWearableState(patch,rerender=false,persist=true){S.profile.wearable={...(S.profile.wearable||{}),...patch};if(persist)save();if(rerender)renderWearableStatus();}
+function wearableConnectionLabel(w){
+  if(w.connected)return 'Connected · '+(w.method==='ble'?'Direct Bluetooth':w.method==='health-connect'?'Health Connect':'Wearable');
+  if(w.method==='health-connect')return 'Health Connect bridge';
+  if(w.name)return 'Saved device · reconnect';
+  return 'Not connected';
+}
 function renderWearableStatus(){
   const w=S.profile.wearable||{};
-  const st=$('wear-settings-status'),sub=$('wear-settings-sub'),hr=$('wear-hr'),bat=$('wear-battery'),steps=$('wear-steps');
+  const st=$('wear-settings-status'),sub=$('wear-settings-sub'),hr=$('wear-hr'),bat=$('wear-battery'),steps=$('wear-steps'),method=$('wear-method-status');
   if(st){st.textContent=w.connected?'Connected':'Not connected';st.classList.toggle('on',!!w.connected);}
-  if(sub)sub.textContent=w.name?(w.name+' · '+(w.connected?'live BLE link':'last known device')):'Noise / Bluetooth health data';
+  if(sub)sub.textContent=w.name?(w.name+' · '+wearableConnectionLabel(w)):'Noise ColorFit Pro 5 Max or other compatible wearable';
   if(hr)hr.textContent=w.heartRate?String(w.heartRate):'—';
   if(bat)bat.textContent=w.battery!=null?String(w.battery)+'%':'—';
   if(steps)steps.textContent=w.steps!=null?Number(w.steps).toLocaleString():'—';
+  if(method)method.textContent=wearableBrowserLabel();
+  const c=$('wear-connect-main');if(c)c.textContent=w.connected?'Disconnect wearable':'Connect via Bluetooth';
+  const r=$('wear-reconnect');if(r)r.hidden=!(!w.connected&&w.deviceId);
+}
+function wearableHomeCard(){
+  const w=S.profile.wearable||{};
+  return `<section class="wear-card wear-home-card">
+    <div class="wear-head"><div class="wear-icon">⌁</div><div><div class="wear-kicker">WEARABLE & HEALTH</div><div class="wear-title">${w.connected?(w.name||'Wearable connected'):'Connect your wearable'}</div><div class="wear-sub">${w.connected?'Live heart-rate link is available':'Noise ColorFit Pro 5 Max · Bluetooth · Android Health Connect'}</div></div><span class="wear-status ${w.connected?'on':''}">${w.connected?'LIVE':'SET UP'}</span></div>
+    <div class="wear-action-row"><button class="btn btn-g btn-sm" onclick="openWearableHub()">${w.connected?'Open wearable':'Connect wearable'}</button><button class="btn btn-o btn-sm" onclick="openWearableHub()">Connection options</button></div>
+    ${w.connected?`<div class="wear-metrics"><div class="wear-metric"><b>${w.heartRate||'—'}</b><span>HR bpm</span></div><div class="wear-metric"><b>${w.battery!=null?w.battery+'%':'—'}</b><span>Battery</span></div><div class="wear-metric"><b>${w.steps!=null?Number(w.steps).toLocaleString():'—'}</b><span>Steps</span></div></div>`:`<div class="wear-note">The connection menu now shows the available method for this browser and the Android Health Connect path for full activity data.</div>`}
+  </section>`;
+}
+function wearableDashboardCard(){
+  const w=S.profile.wearable||{};
+  return `<div class="wear-card">
+    <div class="wear-head"><div class="wear-icon">⌁</div><div><div class="wear-title">${w.name||'No wearable connected'}</div><div class="wear-sub">${wearableConnectionLabel(w)}</div></div><span class="wear-status ${w.connected?'on':''}">${w.connected?'LIVE':'OFFLINE'}</span></div>
+    <div class="wear-metrics"><div class="wear-metric"><b>${w.heartRate||'—'}</b><span>HR bpm</span></div><div class="wear-metric"><b>${w.battery!=null?w.battery+'%':'—'}</b><span>Battery</span></div><div class="wear-metric"><b>${w.steps!=null?Number(w.steps).toLocaleString():'—'}</b><span>Steps</span></div></div>
+    <div class="wear-action-row"><button class="btn btn-g btn-sm" onclick="openWearableHub()">${w.connected?'Manage connection':'Choose connection method'}</button></div>
+    <div class="wear-note">Only metrics actually received from the device or bridge are shown. No steps, sleep, SpO₂ or calories are fabricated.</div>
+  </div>`;
+}
+function openWearableHub(){
+  const w=S.profile.wearable||{};
+  showModal(`<div class="modal-head"><div><div class="modal-title">⌁ Wearable & Health</div><div class="modal-subtitle">Choose how FitTrack Pro gets fitness data</div></div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="wear-hub">
+      <div class="wear-current"><div><div class="wear-kicker">CURRENT STATUS</div><strong>${w.connected?(w.name||'Wearable connected'):'No active connection'}</strong><span>${wearableConnectionLabel(w)}</span></div><span class="wear-status ${w.connected?'on':''}">${w.connected?'CONNECTED':'NOT CONNECTED'}</span></div>
+      <div class="wear-method active"><div class="wm-icon">⌁</div><div class="wm-main"><strong>Direct Bluetooth (BLE)</strong><span>Experimental browser connection · ${wearableBrowserLabel()}</span><small>Best for compatible standard BLE heart-rate and battery services. This can work for a watch only when those services are exposed to the browser.</small></div><button id="wear-connect-main" class="btn ${w.connected?'btn-r':'btn-g'} btn-sm" onclick="${w.connected?'disconnectNoiseWearable()':'connectNoiseWearable()'}">${w.connected?'Disconnect':'Connect'}</button></div>
+      <div class="wear-method"><div class="wm-icon">HC</div><div class="wm-main"><strong>Android Health Connect</strong><span>Recommended path for broader health data</span><small>NoiseFit can sync activity data to the phone. A native Android/TWA bridge is required for FitTrack Pro to read Health Connect securely.</small></div><button class="btn btn-o btn-sm" onclick="showHealthConnectInfo()">How to connect</button></div>
+      <div class="wear-method"><div class="wm-icon">NF</div><div class="wm-main"><strong>NoiseFit companion route</strong><span>Use NoiseFit as the upstream watch app</span><small>Keep the watch paired with NoiseFit. FitTrack should consume standardized data through the Android bridge rather than pretending to speak an undocumented Noise protocol.</small></div><button class="btn btn-o btn-sm" onclick="showNoiseFitInfo()">Setup guide</button></div>
+      <button id="wear-reconnect" class="btn btn-o" ${w.deviceId?'':'hidden'} onclick="reconnectSavedWearable()">↻ Reconnect saved wearable</button>
+      <div class="wear-capabilities"><div class="wear-kicker">DATA POLICY</div><div>Direct BLE: heart rate / battery only when exposed. Health Connect bridge: broader standardized records such as exercise, heart rate, steps and calories when permitted. FitTrack never invents missing wearable values.</div></div>
+    </div>`);
+  renderWearableStatus();
+}
+function showHealthConnectInfo(){
+  showModal(`<div class="modal-head"><div class="modal-title">Android Health Connect</div><button class="modal-close" onclick="closeModal()">×</button></div><div class="info-modal"><div class="info-callout">This browser PWA cannot directly request Android Health Connect permissions. The production integration needs an Android companion / TWA bridge.</div><ol><li>Pair the ColorFit Pro 5 Max with NoiseFit on Android.</li><li>Allow NoiseFit to sync its supported activity data.</li><li>Install the FitTrack Android companion when available.</li><li>Grant FitTrack only the Health Connect data types it needs, such as heart rate, steps, exercise and calories.</li><li>Return to FitTrack and run sync; imported values will be marked as Health Connect data.</li></ol><button class="btn btn-o" onclick="openWearableHub()">Back to connection methods</button></div>`);
+}
+function showNoiseFitInfo(){
+  showModal(`<div class="modal-head"><div class="modal-title">NoiseFit → FitTrack</div><button class="modal-close" onclick="closeModal()">×</button></div><div class="info-modal"><div class="info-callout">For the ColorFit Pro 5 Max, Noise documents phone-side activity syncing through the NoiseFit app. FitTrack does not assume a private Noise BLE protocol.</div><ol><li>Keep Bluetooth enabled on the Android phone.</li><li>Open NoiseFit and keep the watch paired.</li><li>Sync the watch inside NoiseFit until the activity sync completes.</li><li>Use the future FitTrack Health Connect bridge to import standardized records.</li></ol><button class="btn btn-o" onclick="openWearableHub()">Back to connection methods</button></div>`);
 }
 async function connectNoiseWearable(){
-  if(!wearableAvailable()){toast('Web Bluetooth is not supported in this browser. Try Chrome on Android/desktop.',true);return;}
+  if(!wearableAvailable()){toast('Direct Bluetooth is not available in this browser. Use Chrome on a supported HTTPS Android/desktop setup.',true);return;}
+  if(!wearableSecureContext()){toast('Bluetooth requires a secure HTTPS origin. localhost is allowed for development.',true);return;}
   try{
     const device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[BLE_UUID.deviceInfo,BLE_UUID.battery,BLE_UUID.heartRate]});
     wearableDevice=device;
-    device.addEventListener('gattserverdisconnected',()=>{setWearableState({connected:false});toast('Wearable disconnected');});
+    device.addEventListener('gattserverdisconnected',()=>{setWearableState({connected:false,lastSyncAt:Date.now()},true);toast('Wearable disconnected');});
     const server=await device.gatt.connect();
-    setWearableState({connected:true,name:device.name||'Bluetooth wearable',deviceId:device.id||'',lastConnectedAt:Date.now()});
+    setWearableState({connected:true,name:device.name||'Bluetooth wearable',deviceId:device.id||'',lastConnectedAt:Date.now(),lastSyncAt:Date.now(),method:'ble',source:'Web Bluetooth'},true);
     await readWearableBattery(server);
     await readWearableDeviceInfo(server);
     await subscribeWearableHR(server);
     toast((device.name||'Wearable')+' connected ✓');
+    closeModal();
   }catch(e){
     if(e&&e.name==='NotFoundError')return;
     console.warn('Wearable connection failed',e);
-    setWearableState({connected:false});
-    toast('Could not connect. Keep the watch nearby and try again.',true);
+    setWearableState({connected:false},true);
+    const detail=e?.name==='SecurityError'?'Check HTTPS / browser permissions.':e?.message?.slice(0,90)||'';
+    toast('Could not connect. '+detail,true);
   }
 }
-async function readWearableBattery(server){
-  try{const svc=await server.getPrimaryService(BLE_UUID.battery);const ch=await svc.getCharacteristic(BLE_UUID.batteryLevel);const v=await ch.readValue();setWearableState({battery:v.getUint8(0)});}catch(e){}}
-async function readWearableDeviceInfo(server){
-  try{const svc=await server.getPrimaryService(BLE_UUID.deviceInfo);for(const [key,uuid] of [['manufacturer',BLE_UUID.manufacturer],['model',BLE_UUID.model]]){try{const ch=await svc.getCharacteristic(uuid);const v=await ch.readValue();const text=new TextDecoder().decode(v.buffer);if(text){setWearableState({name:(S.profile.wearable.name||'Noise wearable')+' · '+text});}}catch(e){}}}catch(e){}}
-async function subscribeWearableHR(server){
-  try{const svc=await server.getPrimaryService(BLE_UUID.heartRate);const ch=await svc.getCharacteristic(BLE_UUID.heartRateMeasurement);wearableHRChar=ch;await ch.startNotifications();ch.addEventListener('characteristicvaluechanged',onWearableHR);}
-  catch(e){console.info('No standard BLE heart-rate service exposed by this device.');}
+async function reconnectSavedWearable(){
+  if(!wearableAvailable()||!navigator.bluetooth.getDevices){toast('Saved-device reconnect is not supported by this browser.',true);return;}
+  try{
+    const list=await navigator.bluetooth.getDevices();
+    const saved=S.profile.wearable?.deviceId;
+    const device=list.find(d=>d.id===saved)||list.find(d=>d.name===S.profile.wearable?.name?.split(' · ')[0]);
+    if(!device){toast('No previously authorized wearable found. Tap Connect instead.',true);return;}
+    wearableDevice=device;
+    device.addEventListener('gattserverdisconnected',()=>setWearableState({connected:false}));
+    const server=await device.gatt.connect();
+    setWearableState({connected:true,lastConnectedAt:Date.now(),method:'ble',source:'Web Bluetooth'},true);
+    await readWearableBattery(server);await readWearableDeviceInfo(server);await subscribeWearableHR(server);
+    closeModal();toast((device.name||'Wearable')+' reconnected ✓');
+  }catch(e){console.warn('Reconnect failed',e);toast('Saved wearable could not be reconnected.',true);}
 }
-function onWearableHR(ev){try{const v=ev.target.value;const flags=v.getUint8(0);const sixteen=flags&1;const hr=sixteen?v.getUint16(1,true):v.getUint8(1);if(hr>0&&hr<240){setWearableState({heartRate:hr});if(S.session && Date.now()-(S.session.lastHrSampleTs||0)>=5000){S.session.heartRateSamples=(S.session.heartRateSamples||[]).concat({ts:Date.now(),bpm:hr}).slice(-720);S.session.lastHrSampleTs=Date.now();saveDraft(false);}}}catch(e){}}
-async function disconnectNoiseWearable(){
-  try{if(wearableHRChar){try{await wearableHRChar.stopNotifications();}catch(e){}wearableHRChar=null;}if(wearableDevice?.gatt?.connected)wearableDevice.gatt.disconnect();}catch(e){}
-  setWearableState({connected:false});toast('Wearable disconnected');
-}
+async function readWearableBattery(server){try{const svc=await server.getPrimaryService(BLE_UUID.battery);const ch=await svc.getCharacteristic(BLE_UUID.batteryLevel);const v=await ch.readValue();setWearableState({battery:v.getUint8(0),lastSyncAt:Date.now()});}catch(e){}}
+async function readWearableDeviceInfo(server){try{const svc=await server.getPrimaryService(BLE_UUID.deviceInfo);for(const [key,uuid] of [['manufacturer',BLE_UUID.manufacturer],['model',BLE_UUID.model]]){try{const ch=await svc.getCharacteristic(uuid);const v=await ch.readValue();const text=new TextDecoder().decode(v.buffer).replace(/\0/g,'').trim();if(text)setWearableState({source:text});}catch(e){}}}catch(e){}}
+async function subscribeWearableHR(server){try{const svc=await server.getPrimaryService(BLE_UUID.heartRate);const ch=await svc.getCharacteristic(BLE_UUID.heartRateMeasurement);wearableHRChar=ch;await ch.startNotifications();ch.addEventListener('characteristicvaluechanged',onWearableHR);setWearableState({capabilities:Array.from(new Set([...(S.profile.wearable?.capabilities||[]),'heart_rate']))},true);}catch(e){console.info('No standard BLE heart-rate service exposed by this device.');}}
+function onWearableHR(ev){try{const v=ev.target.value;const flags=v.getUint8(0);const sixteen=flags&1;const hr=sixteen?v.getUint16(1,true):v.getUint8(1);if(hr>0&&hr<240){const prev=S.profile.wearable?.heartRate;setWearableState({heartRate:hr,lastSyncAt:Date.now()},false,false);if(S.session&&Date.now()-(S.session.lastHrSampleTs||0)>=5000){S.session.heartRateSamples=(S.session.heartRateSamples||[]).concat({ts:Date.now(),bpm:hr}).slice(-720);S.session.lastHrSampleTs=Date.now();saveDraft(false);}}}catch(e){}}
+async function disconnectNoiseWearable(){try{if(wearableHRChar){try{await wearableHRChar.stopNotifications()}catch(e){}wearableHRChar=null}if(wearableDevice?.gatt?.connected)wearableDevice.gatt.disconnect()}catch(e){}setWearableState({connected:false},true);toast('Wearable disconnected')}
+// Optional native Health Connect bridge contract: host app can post a message with standardized records.
+window.addEventListener('message',e=>{
+  const d=e?.data;if(!d||d.type!=='FITTRACK_HEALTH_CONNECT_SYNC')return;
+  try{
+    const payload=d.payload||{};
+    const w=S.profile.wearable||{};
+    setWearableState({method:'health-connect',source:'Android Health Connect',connected:true,lastSyncAt:Date.now(),heartRate:Number(payload.heartRate)||w.heartRate,steps:Number(payload.steps)||w.steps,battery:Number.isFinite(Number(payload.battery))?Number(payload.battery):w.battery});
+    if(S.session&&Array.isArray(payload.heartRateSamples))S.session.heartRateSamples=payload.heartRateSamples.filter(x=>Number(x?.bpm)>0).map(x=>({ts:Number(x.ts)||Date.now(),bpm:Number(x.bpm)})).slice(-720);
+    toast('Health Connect sync received ✓');
+  }catch(err){console.warn('Health Connect bridge payload rejected',err);}
+});
 function renderWearablePreviewData(){renderWearableStatus();}
 
 function openSettings(){showModal(`
@@ -1559,6 +1635,13 @@ function openSettings(){showModal(`
       <div style="font-size:13px;font-weight:700;margin-bottom:6px">🗓 Manual Day Override</div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:8px">Force a specific day number. Leave blank for auto.</div>
       <input id="s-mday" type="number" class="inp" style="max-width:100px" min="1" max="${S.profile.goalDays}" placeholder="Day #" value="${S.profile.manualDay||''}">
+    </div>
+    <div class="wear-card wear-settings-card">
+      <div class="wear-head"><div class="wear-icon">⌁</div><div><div class="wear-kicker">WEARABLE CONNECTION</div><div class="wear-title" id="wear-settings-title">Noise ColorFit Pro 5 Max</div><div class="wear-sub" id="wear-settings-sub">Noise ColorFit Pro 5 Max or other compatible wearable</div></div><span id="wear-settings-status" class="wear-status">Not connected</span></div>
+      <div class="wear-browser"><span>Bluetooth status</span><b id="wear-method-status">Checking…</b></div>
+      <div class="wear-metrics"><div class="wear-metric"><b id="wear-hr">—</b><span>HR bpm</span></div><div class="wear-metric"><b id="wear-battery">—</b><span>Battery</span></div><div class="wear-metric"><b id="wear-steps">—</b><span>Steps</span></div></div>
+      <div class="wear-actions"><button id="wear-connect-main" class="btn btn-g" onclick="connectNoiseWearable()">Connect via Bluetooth</button><button class="btn btn-o" onclick="openWearableHub()">Options</button></div>
+      <div class="wear-note">For broader activity and sleep records, use the Android Health Connect route. Direct browser Bluetooth is experimental and depends on standard BLE services being exposed.</div>
     </div>
     <div style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="s-audio" ${S.profile.audioEnabled?'checked':''} style="width:18px;height:18px"><label for="s-audio" style="font-size:14px">Rest timer audio beep</label></div>
     <button class="btn btn-a" onclick="saveSettings()">Save Settings</button>
@@ -1586,5 +1669,6 @@ window.addEventListener('load',()=>{
   load();migrateV3();initSeed();
   const draft=loadDraft();
   if(draft&&draft.startTs){S.session=draft;S.session.timerIv=setInterval(tickSession,1000);if(S.session.rest?.on)S.session.rest.iv=setInterval(tickRest,250);}
-  addSettingsBtn();go('home');syncBars();
+  addSettingsBtn();go('home');syncBars();renderWearableStatus();
+  if(navigator.bluetooth?.getDevices){setTimeout(()=>reconnectSavedWearable().catch(()=>{}),600);}
 });
