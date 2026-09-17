@@ -1,19 +1,5 @@
-# FitTrack Pro v9
+# FitTrack Pro v10 — Phase 6
 
-Gym Mode 2.0 + structural rebuild of the Phase 4 PWA.
+Structural stability, spacing, header-overlap prevention, and whole-PWA audit update.
 
-Open `index.html` through a secure/static web origin for full PWA behavior. `FitTrack-Pro-v9-Preview.html` is a standalone visual preview and does not modify real app data.
-
-## Core files
-- `index.html` — semantic PWA shell
-- `styles.css` — consolidated visual/layout system
-- `app.js` — application state, pages, workout, food, plans, history, export, timer and wearable logic
-- `sw.js` — v9 service worker
-- `manifest.json` — PWA metadata
-
-## Storage
-Primary state key: `fittrack_pro_v9`.
-Previous `ft4` data is still read and migrated forward on first load.
-
-## Important
-Estimated calories are labeled as estimates. Wearable values are only displayed when they are actually received from the device/browser integration layer.
+Open `index.html` through HTTP(S) for full PWA/service-worker behavior. `FitTrack-Pro-v10-Preview.html` is a standalone visual preview using assumption/sample data and does not modify real app storage.

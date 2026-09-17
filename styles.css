@@ -780,3 +780,80 @@ button{min-height:40px;}
 .rpe-btn.on{background:var(--adim);border-color:var(--abrd);color:var(--accent)}
 .session-note-label{margin-top:12px}.session-note{min-height:78px;resize:vertical}
 @media(max-width:390px){.rpe-row{gap:3px}.rpe-btn{height:36px;font-size:12px}.rb-ring{width:78px;height:78px}.rb-ring svg{width:78px;height:78px}.rb-count{font-size:21px}}
+
+/* ================================================================
+   FitTrack Pro v10 — Structural Shell & Spacing Reset
+   Purpose: prevent fixed header/session chrome from covering scroll content,
+   and make card/section rhythm predictable across the entire PWA.
+   ================================================================ */
+:root{
+  --header:64px;
+  --session-height:60px;
+  --rest-height:82px;
+  --scroll-top:64px;
+  --nav:74px;
+  --page-pad:16px;
+  --content-max:780px;
+  --card-gap:16px;
+  --block-gap:18px;
+}
+
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;}
+#app{position:fixed;inset:0;display:block!important;padding:0!important;}
+#scroll{
+  position:absolute!important;
+  top:var(--scroll-top)!important;
+  right:0;bottom:calc(var(--nav) + var(--safe));left:0;
+  width:100%!important;max-width:none!important;margin:0!important;
+  padding:0!important;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+  transition:top .18s ease;
+  z-index:1;
+}
+#scroll::-webkit-scrollbar{display:none}
+#scroll .page{width:100%;max-width:var(--content-max);min-height:100%;margin:0 auto;padding:0 0 30px;}
+#app-header{height:var(--header);z-index:320;}
+#app-header + #scroll{isolation:isolate;}
+#session-bar{height:var(--session-height);z-index:340;}
+#rest-bar{top:var(--session-height);height:var(--rest-height);z-index:330;}
+body.session-active #app-header{display:none;}
+
+/* Home hierarchy: never let primary cards touch each other. */
+.hero{margin:18px var(--page-pad) 0!important;}
+.hero + .goal-strip.card{margin-top:var(--card-gap)!important;margin-bottom:0!important;}
+.goal-strip.card + .quick-grid{margin-top:var(--card-gap)!important;margin-bottom:0!important;}
+.quick-grid{gap:10px!important;}
+.quick-card{min-height:92px;}
+
+/* Dashboard hierarchy: one rhythm for score → section → card. */
+.scorecard-wrap{margin:0 var(--page-pad) var(--block-gap)!important;}
+.scorecard{margin:0!important;}
+.dashboard-stack{display:grid;gap:var(--block-gap)!important;}
+.dashboard-block{margin:0 var(--page-pad)!important;}
+.dashboard-block .sec{padding:0 0 8px!important;margin:0!important;}
+.dashboard-block .card,
+.dashboard-block .chart-box,
+.dashboard-block .goal-dashboard{margin-left:0!important;margin-right:0!important;}
+.metric-grid-3{gap:10px!important;}
+.metric-grid-3 .metric-tile{padding:13px 9px;min-height:64px;}
+
+/* All first-level cards get stable separation where adjacent siblings exist. */
+.page > .card + .card{margin-top:var(--card-gap);}
+.page > .mx.mb12{margin-bottom:0;}
+
+/* Food / generic first content: keep breathing room under shell. */
+.pg-title{padding-top:20px;}
+
+/* Workout shell: the first exercise card starts below session chrome, not under it. */
+.ex-card:first-child{margin-top:4px;}
+
+/* Mobile refinement */
+@media(max-width:560px){
+  :root{--page-pad:14px;--card-gap:16px;--block-gap:18px;}
+  .pg-title{padding-left:var(--page-pad);padding-right:var(--page-pad);}
+  .pg-sub,.sec{padding-left:var(--page-pad);padding-right:var(--page-pad);}
+  .hero{margin-left:var(--page-pad)!important;margin-right:var(--page-pad)!important;}
+  .scorecard-wrap,.dashboard-block{margin-left:var(--page-pad)!important;margin-right:var(--page-pad)!important;}
+}

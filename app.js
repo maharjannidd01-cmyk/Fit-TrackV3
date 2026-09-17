@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════
-   FitTrack Pro v4.1  —  app.js
+   FitTrack Pro v10  —  app.js
    + Add/edit exercises mid-workout
    + Larger rest timer
    + Food quantity editing
@@ -172,8 +172,8 @@ const S={
   cookMeal:{name:'',ingredients:[],servings:1,myServings:1},
 };
 
-const KEY='fittrack_pro_v9', LEGACY_KEY='ft4', DRAFT='fittrack_pro_session_v9';
-const SCHEMA_VERSION=9;
+const KEY='fittrack_pro_v10', LEGACY_V9='fittrack_pro_v9', LEGACY_KEY='ft4', DRAFT='fittrack_pro_session_v10', LEGACY_DRAFT='fittrack_pro_session_v9';
+const SCHEMA_VERSION=10;
 let _draftSaveTs=0, _midnightKey='';
 let deferredInstallPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
@@ -189,11 +189,12 @@ function normalizeState(d){
 }
 function load(){
   try{
-    const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);
+    const rawKey=[KEY,LEGACY_V9,LEGACY_KEY].find(k=>localStorage.getItem(k));
+    const raw=rawKey?localStorage.getItem(rawKey):null;
     const d=raw?JSON.parse(raw):{};
     const n=normalizeState(d);
     S.exercises=n.exercises;S.plans=n.plans;S.logs=n.logs;S.profile=n.profile;
-    if(raw && !localStorage.getItem(KEY) && localStorage.getItem(LEGACY_KEY)){save();}
+    if(raw && !localStorage.getItem(KEY) && rawKey!==KEY){save();}
   }catch(e){toast('Stored data could not be read — starting safely.');}
 }
 function save(){
@@ -208,7 +209,7 @@ function saveDraft(force=false){
   _draftSaveTs=now;
   try{localStorage.setItem(DRAFT,JSON.stringify({...S.session,schemaVersion:SCHEMA_VERSION,savedAt:now}));}catch(e){}
 }
-function loadDraft(){try{const d=JSON.parse(localStorage.getItem(DRAFT)||'null');if(!d||!d.startTs)return null;if(Date.now()-(d.savedAt||0)>12*3600*1000){localStorage.removeItem(DRAFT);return null;}return d;}catch(e){return null;}}
+function loadDraft(){try{const raw=localStorage.getItem(DRAFT)||localStorage.getItem(LEGACY_DRAFT);const d=JSON.parse(raw||'null');if(!d||!d.startTs)return null;if(Date.now()-(d.savedAt||0)>12*3600*1000){localStorage.removeItem(DRAFT);return null;}return d;}catch(e){return null;}}
 function migrateV3(){try{const v3=JSON.parse(localStorage.getItem('ft3')||'null');if(!v3)return;if(v3.logs)Object.entries(v3.logs).forEach(([d,l])=>{if(!S.logs[d])S.logs[d]={foods:[],water:0,bodyWeight:null,sessions:[]};if(l.calories)S.logs[d].foods=l.calories.map(f=>({name:f.name,cal:f.cal,p:f.p||0,c:f.c||0,f:f.f||0,qty:1}));if(l.water)S.logs[d].water=l.water;if(l.weight)S.logs[d].bodyWeight=l.weight;if(l.sessions)S.logs[d].sessions=l.sessions;});if(v3.profile){S.profile.name=v3.profile.name||S.profile.name;S.profile.weightKg=v3.profile.weightKg||S.profile.weightKg;S.profile.targetCal=v3.profile.targetCal||v3.profile.targetCals||S.profile.targetCal;S.profile.targetProtein=v3.profile.targetProtein||S.profile.targetProtein;}localStorage.removeItem('ft3');save();toast('Previous data imported ✓');}catch(e){}}
 function initSeed(){if(S.exercises.length)return;S.exercises=SEED_EXERCISES.map((e,i)=>({id:'ex_'+String(i+1).padStart(3,'0'),name:e.name,muscleGroup:e.mg,defaultSets:e.ds,defaultReps:e.dr,note:e.note||'',isCardio:!!e.isCardio}));S.plans=SEED_PLANS.map((p,i)=>({id:'pl_'+String(i+1).padStart(3,'0'),name:p.name,emoji:p.emoji,exercises:p.exNames.map(name=>{const ex=S.exercises.find(e=>e.name===name);return ex?{exId:ex.id,sets:ex.defaultSets,reps:ex.defaultReps,note:ex.note}:null;}).filter(Boolean)}));const ids=S.plans.map(p=>p.id);S.profile.weeklySchedule={mon:ids[0],tue:ids[1],wed:ids[2],thu:ids[3],fri:ids[4],sat:ids[5],sun:null};save();}
 
@@ -494,15 +495,24 @@ function completeSet(exIdx,setIdx){
   const pct=total?Math.round((done/total)*100):0;
   const pb=$('sb-prog');if(pb)pb.style.width=pct+'%';
   const pl=$('sb-prog-lbl');if(pl)pl.textContent=`${done}/${total} sets · ${pct}%`;
-  if(set.done)startRest(allDone?90:60);
+  if(set.done){startRest(allDone?90:60);focusNextSet(exIdx,setIdx);}
 }
+
 function setVal(exIdx,setIdx,field,val){if(!S.session)return;const set=S.session.setLogs[exIdx]?.[setIdx];if(set){set[field]=val;saveDraft();}}
 
 function syncBars(){
-  const sb=$('session-bar'),rb=$('rest-bar'),sc=$('scroll');if(!sb||!rb||!sc)return;
+  const sb=$('session-bar'),rb=$('rest-bar'),sc=$('scroll'),root=document.documentElement;
+  if(!sb||!rb||!sc)return;
   const sessOn=!!S.session,restOn=!!(S.session?.rest?.on);
   sb.classList.toggle('on',sessOn);rb.classList.toggle('on',restOn);
-  sc.style.paddingTop=(sessOn?(56+(restOn?80:0)):0)+'px';
+  document.body.classList.toggle('session-active',sessOn);
+  const headerH=$('app-header')?.getBoundingClientRect().height||64;
+  const sessionH=sessOn?(sb.getBoundingClientRect().height||60):0;
+  const restH=restOn?(rb.getBoundingClientRect().height||82):0;
+  root.style.setProperty('--scroll-top',Math.round((sessOn?sessionH:headerH)+restH)+'px');
+  root.style.setProperty('--session-height',Math.round(sessionH||60)+'px');
+  root.style.setProperty('--rest-height',Math.round(restH||82)+'px');
+  sc.style.paddingTop='0';
   const rt=$('rb-title');if(rt&&S.session)rt.textContent=S.session.planName||'Rest Timer';
 }
 
@@ -841,12 +851,20 @@ function downloadSummaryPNG(){
     const nm=mw.exercise.length>30?mw.exercise.slice(0,30)+'…':mw.exercise;
     ctx.fillText(nm,360,mwy+170);
   }
-  // HR section (placeholder)
+  // HR section — show captured session data when available; never fabricate.
   const hry=statsY+ch*2+320;
   ctx.fillStyle='rgba(255,79,79,.08)';roundRect(ctx,80,hry,W-160,160,24);ctx.fill();
   ctx.strokeStyle='rgba(255,79,79,.25)';ctx.lineWidth=2;roundRect(ctx,80,hry,W-160,160,24);ctx.stroke();
-  ctx.font='700 38px -apple-system,sans-serif';ctx.fillStyle='#ff4f4f';
-  ctx.fillText('❤️ HEART RATE — Connect wearable to track',112,hry+100);
+  ctx.font='700 34px -apple-system,sans-serif';ctx.fillStyle='#ff4f4f';
+  if(d.avgHeartRate){
+    ctx.fillText('❤️ HEART RATE',112,hry+56);
+    ctx.font='900 58px -apple-system,sans-serif';
+    ctx.fillText(`${d.avgHeartRate} avg · ${d.maxHeartRate||d.avgHeartRate} max bpm`,112,hry+125);
+  }else{
+    ctx.fillText('❤️ HEART RATE',112,hry+58);
+    ctx.font='400 32px -apple-system,sans-serif';ctx.fillStyle='#7a7a8a';
+    ctx.fillText('No samples captured in this session',112,hry+115);
+  }
   // Footer
   ctx.font='600 42px -apple-system,sans-serif';ctx.fillStyle='#333';
   ctx.fillText('fittrackpro.app',80,H-60);
@@ -1552,7 +1570,7 @@ function openSettings(){showModal(`
     <button class="btn btn-r" onclick="clearAll()">🗑 Clear All Data</button>
   </div>`);renderWearableStatus();}
 
-function saveSettings(){S.profile.name=$('s-name')?.value.trim()||'Athlete';S.profile.weightKg=parseFloat($('s-bw')?.value)||100;S.profile.targetCal=parseInt($('s-cal')?.value)||2300;S.profile.targetProtein=parseInt($('s-pro')?.value)||200;S.profile.programName=$('s-prog')?.value.trim()||'My Program';S.profile.goalDays=parseInt($('s-goal')?.value)||100;S.profile.targetWeightKg=parseFloat($('s-target-w')?.value)||null;S.profile.startWeightKg=parseFloat($('s-start-w')?.value)||null;S.profile.weeklyWorkoutTarget=Math.max(1,parseInt($('s-weekly')?.value)||5);S.profile.waterTarget=Math.max(1,parseInt($('s-water')?.value)||8);const sd=$('s-start')?.value;if(sd)S.profile.startDate=new Date(sd).toDateString();const md=parseInt($('s-mday')?.value);S.profile.manualDay=(md>=1&&md<=S.profile.goalDays)?md:null;S.profile.audioEnabled=$('s-audio')?.checked??true;save();closeModal();go('home');toast('Settings saved ✓');}
+function saveSettings(){S.profile.name=$('s-name')?.value.trim()||'Athlete';S.profile.weightKg=parseFloat($('s-bw')?.value)||100;S.profile.targetCal=parseInt($('s-cal')?.value)||2300;S.profile.targetProtein=parseInt($('s-pro')?.value)||200;S.profile.programName=$('s-prog')?.value.trim()||'My Program';S.profile.goalDays=parseInt($('s-goal')?.value)||100;S.profile.targetWeightKg=parseFloat($('s-target-w')?.value)||null;S.profile.startWeightKg=parseFloat($('s-start-w')?.value)||null;S.profile.weeklyWorkoutTarget=Math.max(1,parseInt($('s-weekly')?.value)||5);S.profile.waterTarget=Math.max(1,parseInt($('s-water')?.value)||8);const sd=$('s-start')?.value;if(sd){const [yy,mm,dd]=sd.split('-').map(Number);if(yy&&mm&&dd)S.profile.startDate=new Date(yy,mm-1,dd).toDateString();}const md=parseInt($('s-mday')?.value);S.profile.manualDay=(md>=1&&md<=S.profile.goalDays)?md:null;S.profile.audioEnabled=$('s-audio')?.checked??true;save();closeModal();go('home');toast('Settings saved ✓');}
 function clearAll(){resetAllData();}
 
 // ── SETTINGS GEAR ─────────────────────
