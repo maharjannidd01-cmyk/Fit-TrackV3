@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
+<div id="app" data-app-version="17">
   <div id="session-bar" role="status" aria-live="polite">
     <div class="sb-blk"><div class="sb-lbl">Time</div><div class="sb-val" id="sb-time" style="color:var(--accent)">00:00</div></div>
     <div class="sb-mid"><div class="sb-prog-bar"><div class="sb-prog-fill" id="sb-prog" style="width:0%"></div></div><div class="sb-prog-lbl" id="sb-prog-lbl">0/0 sets</div></div>
@@ -32,14 +32,14 @@
       <div class="rb-center"><span class="rb-count" id="rb-count">01:30</span><span class="rb-label">REST</span></div>
     </div>
     <div class="rb-info" onclick="openRestOverlay()"><div class="rb-title" id="rb-title">Rest Timer</div><div class="rb-sub">Tap to expand</div></div>
-    <div class="rb-btns" onclick="event.stopPropagation()"><div class="rb-row"><button class="rb-btn" onclick="startRest(60)">60s</button><button class="rb-btn" onclick="startRest(90)">90s</button><button class="rb-btn" onclick="startRest(120)">2m</button></div><button class="rb-skip" onclick="skipRest()">Skip Rest →</button></div>
+    <div class="rb-btns" onclick="event.stopPropagation()"><div class="rb-row"><button class="rb-btn" onclick="adjustRest(-15)">−15</button><button class="rb-btn" onclick="startRest(60)">60s</button><button class="rb-btn" onclick="startRest(90)">90s</button><button class="rb-btn" onclick="adjustRest(15)">+15</button></div><button class="rb-skip" onclick="skipRest()">Skip Rest →</button></div>
   </div>
 
   <header id="app-header">
     <div class="brand-lockup"><div class="brand-mark">FT</div><div><div class="brand-name">FIT<span>TRACK</span></div><div class="brand-tag">TRAIN • TRACK • TRANSFORM</div></div></div>
     <div class="header-actions"><div class="header-status"><span class="status-dot"></span><span>Today</span></div><button id="settings-btn" class="header-icon" type="button" aria-label="Open settings" title="Settings">⚙</button></div>
   </header>
-  <main id="scroll" aria-live="polite"></main>
+  <main id="scroll" aria-live="polite" tabindex="-1"></main>
 
   <nav id="nav" aria-label="Primary navigation">
     <button class="nb on" data-p="home" onclick="go('home')"><i aria-hidden="true">⌂</i><span>Home</span></button>
@@ -52,12 +52,21 @@
 
 <div id="rest-overlay" onclick="closeRestOverlay()" role="dialog" aria-modal="true" aria-label="Rest timer">
   <div class="rov-ring"><svg viewBox="0 0 320 320" aria-hidden="true"><circle cx="160" cy="160" r="132" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle id="rov-ring" cx="160" cy="160" r="132" fill="none" stroke="var(--accent)" stroke-width="14" stroke-dasharray="829.4" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(-90 160 160)"/></svg><div class="rov-center"><div class="rov-count" id="rov-count">01:30</div><div class="rov-label">REST · tap outside to close</div></div></div>
-  <div class="rov-btns" onclick="event.stopPropagation()"><button class="rov-btn" onclick="startRest(60);closeRestOverlay()">60s</button><button class="rov-btn" onclick="startRest(90);closeRestOverlay()">90s</button><button class="rov-btn" onclick="startRest(120);closeRestOverlay()">2 min</button><button class="rov-btn" onclick="startRest(180);closeRestOverlay()">3 min</button></div>
+  <div class="rov-btns" onclick="event.stopPropagation()"><button class="rov-btn" onclick="adjustRest(-15)">−15 sec</button><button class="rov-btn" onclick="adjustRest(15)">+15 sec</button><button class="rov-btn" onclick="startRest(60);closeRestOverlay()">60s</button><button class="rov-btn" onclick="startRest(90);closeRestOverlay()">90s</button><button class="rov-btn" onclick="startRest(120);closeRestOverlay()">2 min</button><button class="rov-btn" onclick="startRest(180);closeRestOverlay()">3 min</button></div>
   <button class="rov-skip" onclick="skipRest();closeRestOverlay()">Skip Rest →</button>
 </div>
 <div id="summary-overlay"><div class="sum-inner" id="sum-inner"></div></div>
 <div id="modal-root"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="js/core/runtime.js" defer></script>
+<script src="js/data/catalog.js" defer></script>
+<script src="js/exercises/library.js" defer></script>
+<script src="js/core/storage.js" defer></script>
+<script src="js/analytics/metrics.js" defer></script>
+<script src="js/workout/engine.js" defer></script>
+<script src="js/nutrition/engine.js" defer></script>
+<script src="js/workout/intelligence.js" defer></script>
+<script src="js/wearables/protocol.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>

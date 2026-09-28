@@ -1,0 +1,19 @@
+{
+  "version": "16.0.0",
+  "phase": 10,
+  "codename": "Exercise Intelligence",
+  "source": "FitTrack Pro v15 — Phase 9 Gym Mode 3.0",
+  "schemaVersion": 16,
+  "features": [
+    "Structured exercise metadata",
+    "Exercise Library 2.0",
+    "Exercise search and filters",
+    "Exercise details and history",
+    "Estimated 1RM by exercise",
+    "Exercise substitutions",
+    "Plan muscle balance",
+    "Expanded exercise editor",
+    "v15-to-v16 storage migration",
+    "Standalone preview"
+  ]
+}
