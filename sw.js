@@ -1,4 +1,4 @@
-const CACHE = 'fittrack-pro-v17-nutrition-2';
+const CACHE = 'fittrack-pro-v18-repair';
 const APP_ASSETS = [
   './','./index.html','./styles.css','./app.js','./manifest.json','./icon.svg','./icon-192.png','./icon-512.png',
   './js/core/runtime.js','./js/core/storage.js','./js/data/catalog.js','./js/exercises/library.js','./js/analytics/metrics.js','./js/workout/engine.js','./js/workout/intelligence.js','./js/nutrition/engine.js','./js/wearables/protocol.js'

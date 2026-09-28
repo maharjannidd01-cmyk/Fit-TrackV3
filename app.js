@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════
-   FitTrack Pro v15 — app controller
+   FitTrack Pro v18 — app controller
    UI orchestration kept here for backwards-compatible inline handlers.
    Pure domain/data services live under ./js/.
 ═══════════════════════════════════ */
